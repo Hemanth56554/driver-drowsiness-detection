@@ -93,7 +93,7 @@ Each test: 5 deliberate eye closures (about 3 seconds), 3 wide yawns, and 10 sec
 || Clear glasses | works (counts to be added) | works (counts to be added) | 0 observed |
 | Dark / tinted glasses | not reliable | not reliable | not measured |
 | Head tilted / angled camera | to be tested | to be tested | to be tested |
-
+| Dark / tinted glasses | not detected (EAR does not change when eyes close) | not measured | not measured |
 
 ## Known limitations
 
@@ -104,6 +104,7 @@ Each test: 5 deliberate eye closures (about 3 seconds), 3 wide yawns, and 10 sec
 - Tested on a laptop webcam only. Performance in a moving vehicle or at night is not yet measured.
 - This is a learning project and is not a safety device.
 - Dark or tinted glasses hide the eyes, so eye-closure detection is unreliable. Head-nod and yawn detection still work. Commercial systems use infrared cameras to solve this.
+- Dark or tinted glasses hide the eyelids, so eye-closure detection does not work. Commercial systems use infrared cameras to solve this.
 
 ## Other files
 
