@@ -14,6 +14,8 @@ CLOSED_SECONDS = 2.0     # eyes closed this long = drowsy alarm
 MAR_THRESHOLD = 0.60     # above this = mouth wide open
 YAWN_SECONDS = 1.5       # mouth open this long = one yawn
 ALERT_GAP_SECONDS = 30   # minimum time between two drowsy Telegram messages
+PITCH_THRESHOLD = 15     # head tilted forward more than this (degrees) = nodding
+NOD_SECONDS = 1.5        # head down this long = one nod
 
 # Landmark numbers
 RIGHT_EYE = [33, 160, 158, 133, 153, 144]
@@ -37,7 +39,8 @@ def mouth_aspect_ratio(pt):
 options = vision.FaceLandmarkerOptions(
     base_options=mp_python.BaseOptions(model_asset_path="face_landmarker.task"),
     running_mode=vision.RunningMode.VIDEO,
-    num_faces=1,
+        num_faces=1,
+    output_facial_transformation_matrixes=True,
 )
 landmarker = vision.FaceLandmarker.create_from_options(options)
 
@@ -48,6 +51,9 @@ closed_since = None       # when the eyes first closed
 mouth_open_since = None   # when the mouth first opened wide
 yawn_counted = False      # so one long yawn is counted only once
 yawn_count = 0
+head_down_since = None
+nod_counted = False
+nod_count = 0
 last_alert_time = -1000.0  # when the last drowsy Telegram message was sent
 
 while True:
@@ -114,7 +120,28 @@ while True:
             closed_since = None
             cv2.putText(frame, "Eyes: Open", (20, 130),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
-
+        # ---- Head-nod logic ----
+        if result.facial_transformation_matrixes:
+            m = np.array(result.facial_transformation_matrixes[0])
+            pitch = float(np.degrees(np.arctan2(-m[1][2], m[2][2])))
+            cv2.putText(frame, f"Pitch: {pitch:.0f}", (20, 195),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
+            if pitch > PITCH_THRESHOLD:
+                if head_down_since is None:
+                    head_down_since = now
+                if now - head_down_since >= NOD_SECONDS:
+                    cv2.putText(frame, "HEAD NOD!", (20, 230),
+                                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 165, 255), 3)
+                    if not nod_counted:
+                        nod_count += 1
+                        nod_counted = True
+                        log_event("NOD", ear, mar)
+                        send_telegram(
+                            f"Head nod #{nod_count} detected at {time.strftime('%H:%M:%S')}"
+                        )
+            else:
+                head_down_since = None
+                nod_counted = False
         # ---- Yawn logic ----
         if mouth_wide:
             if mouth_open_since is None:
