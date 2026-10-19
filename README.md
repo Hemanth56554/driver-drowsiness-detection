@@ -58,13 +58,31 @@ In `drowsiness_detector.py`:
 
 - `eye_ear.py` : shows live EAR with lowest and highest values, used to choose the eye threshold
 - `mouth_mar.py` : shows live MAR with lowest and highest values, used to choose the yawn threshold
+- `alerts.py` : sends Telegram messages
+- `logger.py` : writes alarms and yawns to `events.csv`
 - `test_camera.py` : checks that the webcam works
 
 ## Planned features
 
 - Head-nod detection
-- Telegram alert
-- Test results across lighting conditions
+- Dim-light, glasses and angle testing
+## Test results
+
+Each test: 5 deliberate eye closures (about 3 seconds), 3 wide yawns, and 10 seconds of talking and normal blinking. Results are counted from the `events.csv` log.
+
+| Condition | Eye closures detected | Yawns detected | False alarms |
+|---|---|---|---|
+| Bright light, no glasses | 5 / 5 | 3 / 3 | 0 |
+| Dim light | to be tested | to be tested | to be tested |
+| With glasses | to be tested | to be tested | to be tested |
+| Head tilted / angled camera | to be tested | to be tested | to be tested |
+
+## Known limitations
+
+- Eye-closure detection is paused while the mouth is wide open, so a person sleeping with their mouth open would not trigger the eye alarm.
+- Small yawns (MAR close to 0.60) may be missed.
+- Tested on a laptop webcam only. Performance in a moving vehicle or at night is not yet measured.
+
 
 ## Author
 
