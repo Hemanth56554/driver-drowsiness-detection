@@ -6,6 +6,7 @@ import mediapipe as mp
 from mediapipe.tasks import python as mp_python
 from mediapipe.tasks.python import vision
 from alerts import send_telegram
+from logger import log_event
 
 # ---- Settings you can change later ----
 EAR_THRESHOLD = 0.20     # below this = eyes closed
@@ -87,7 +88,7 @@ while True:
         cv2.putText(frame, f"Yawns: {yawn_count}", (20, 95),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 200, 0), 2)
 
-                # ---- Eye logic ----
+        # ---- Eye logic ----
         # While the mouth is wide open (a yawn), eyes squint, so ignore EAR
         mouth_wide = mar > MAR_THRESHOLD
         if ear < EAR_THRESHOLD and not mouth_wide:
@@ -100,9 +101,10 @@ while True:
                 cv2.rectangle(frame, (0, 0), (w, h), (0, 0, 255), 12)
                 cv2.putText(frame, "DROWSY! WAKE UP!", (20, h - 30),
                             cv2.FONT_HERSHEY_SIMPLEX, 1.4, (0, 0, 255), 4)
-                # Telegram message, at most once per ALERT_GAP_SECONDS
+                # Log and Telegram message, at most once per ALERT_GAP_SECONDS
                 if now - last_alert_time >= ALERT_GAP_SECONDS:
                     last_alert_time = now
+                    log_event("DROWSY", ear, mar)
                     send_telegram(
                         "DRIVER DROWSY! Eyes closed for "
                         f"{closed_for:.1f}s at {time.strftime('%H:%M:%S')}"
@@ -113,7 +115,7 @@ while True:
             cv2.putText(frame, "Eyes: Open", (20, 130),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
 
-                # ---- Yawn logic ----
+        # ---- Yawn logic ----
         if mouth_wide:
             if mouth_open_since is None:
                 mouth_open_since = now
@@ -122,6 +124,7 @@ while True:
                 if not yawn_counted:
                     yawn_count += 1
                     yawn_counted = True
+                    log_event("YAWN", ear, mar)
                     send_telegram(
                         f"Yawn #{yawn_count} detected at {time.strftime('%H:%M:%S')}"
                     )
