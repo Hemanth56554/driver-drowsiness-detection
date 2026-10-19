@@ -14,8 +14,9 @@ CLOSED_SECONDS = 2.0     # eyes closed this long = drowsy alarm
 MAR_THRESHOLD = 0.60     # above this = mouth wide open
 YAWN_SECONDS = 1.5       # mouth open this long = one yawn
 ALERT_GAP_SECONDS = 30   # minimum time between two drowsy Telegram messages
-PITCH_THRESHOLD = 15     # head tilted forward more than this (degrees) = nodding
-NOD_SECONDS = 1.5        # head down this long = one nod
+NOD_OFFSET = 12          # degrees above your resting pitch = head down
+NOD_SECONDS = 2.0        # head down this long = one nod
+CALIBRATION_SECONDS = 5  # time spent measuring your resting head position
 
 # Landmark numbers
 RIGHT_EYE = [33, 160, 158, 133, 153, 144]
@@ -39,7 +40,7 @@ def mouth_aspect_ratio(pt):
 options = vision.FaceLandmarkerOptions(
     base_options=mp_python.BaseOptions(model_asset_path="face_landmarker.task"),
     running_mode=vision.RunningMode.VIDEO,
-        num_faces=1,
+    num_faces=1,
     output_facial_transformation_matrixes=True,
 )
 landmarker = vision.FaceLandmarker.create_from_options(options)
@@ -47,14 +48,18 @@ landmarker = vision.FaceLandmarker.create_from_options(options)
 cap = cv2.VideoCapture(0)
 start = time.monotonic()
 
-closed_since = None       # when the eyes first closed
-mouth_open_since = None   # when the mouth first opened wide
-yawn_counted = False      # so one long yawn is counted only once
+closed_since = None        # when the eyes first closed
+mouth_open_since = None    # when the mouth first opened wide
+yawn_counted = False       # so one long yawn is counted only once
 yawn_count = 0
-head_down_since = None
-nod_counted = False
+head_down_since = None     # when the head first dropped forward
+nod_counted = False        # so one long nod is counted only once
 nod_count = 0
 last_alert_time = -1000.0  # when the last drowsy Telegram message was sent
+
+calib_start = None         # when calibration began
+calib_samples = []         # pitch values collected during calibration
+resting_pitch = None       # your normal head pitch (None = not measured yet)
 
 while True:
     ok, frame = cap.read()
@@ -79,6 +84,21 @@ while True:
         ear = (eye_aspect_ratio(right) + eye_aspect_ratio(left)) / 2.0
         mar = mouth_aspect_ratio(pt)
 
+        # ---- Head pitch and calibration ----
+        pitch = None
+        head_down = False
+        if result.facial_transformation_matrixes:
+            m = np.array(result.facial_transformation_matrixes[0])
+            pitch = float(np.degrees(np.arctan2(-m[1][2], m[2][2])))
+            if resting_pitch is None:
+                if calib_start is None:
+                    calib_start = now
+                calib_samples.append(pitch)
+                if now - calib_start >= CALIBRATION_SECONDS:
+                    resting_pitch = float(np.median(calib_samples))
+            else:
+                head_down = pitch > resting_pitch + NOD_OFFSET
+
         # Draw eye and mouth points
         for p in np.vstack([right, left]):
             cv2.circle(frame, (int(p[0]), int(p[1])), 2, (0, 255, 0), -1)
@@ -93,11 +113,19 @@ while True:
                     cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
         cv2.putText(frame, f"Yawns: {yawn_count}", (20, 95),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 200, 0), 2)
+        if pitch is not None:
+            if resting_pitch is None:
+                pitch_text = f"Pitch: {pitch:.0f}"
+            else:
+                pitch_text = f"Pitch: {pitch:.0f} (limit {resting_pitch + NOD_OFFSET:.0f})"
+            cv2.putText(frame, pitch_text, (20, 195),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
 
         # ---- Eye logic ----
-        # While the mouth is wide open (a yawn), eyes squint, so ignore EAR
+        # While the mouth is wide open (yawn) or the head is dropped,
+        # the eyes look narrow to the camera, so the eye alarm is paused
         mouth_wide = mar > MAR_THRESHOLD
-        if ear < EAR_THRESHOLD and not mouth_wide:
+        if ear < EAR_THRESHOLD and not mouth_wide and not head_down:
             if closed_since is None:
                 closed_since = now
             closed_for = now - closed_since
@@ -120,28 +148,28 @@ while True:
             closed_since = None
             cv2.putText(frame, "Eyes: Open", (20, 130),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+
         # ---- Head-nod logic ----
-        if result.facial_transformation_matrixes:
-            m = np.array(result.facial_transformation_matrixes[0])
-            pitch = float(np.degrees(np.arctan2(-m[1][2], m[2][2])))
-            cv2.putText(frame, f"Pitch: {pitch:.0f}", (20, 195),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
-            if pitch > PITCH_THRESHOLD:
-                if head_down_since is None:
-                    head_down_since = now
-                if now - head_down_since >= NOD_SECONDS:
-                    cv2.putText(frame, "HEAD NOD!", (20, 230),
-                                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 165, 255), 3)
-                    if not nod_counted:
-                        nod_count += 1
-                        nod_counted = True
-                        log_event("NOD", ear, mar)
-                        send_telegram(
-                            f"Head nod #{nod_count} detected at {time.strftime('%H:%M:%S')}"
-                        )
-            else:
-                head_down_since = None
-                nod_counted = False
+        if resting_pitch is None:
+            cv2.putText(frame, "CALIBRATING: sit normally", (20, 230),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 200, 0), 2)
+        elif head_down:
+            if head_down_since is None:
+                head_down_since = now
+            if now - head_down_since >= NOD_SECONDS:
+                cv2.putText(frame, "HEAD NOD!", (20, 230),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 165, 255), 3)
+                if not nod_counted:
+                    nod_count += 1
+                    nod_counted = True
+                    log_event("NOD", ear, mar)
+                    send_telegram(
+                        f"Head nod #{nod_count} detected at {time.strftime('%H:%M:%S')}"
+                    )
+        else:
+            head_down_since = None
+            nod_counted = False
+
         # ---- Yawn logic ----
         if mouth_wide:
             if mouth_open_since is None:
@@ -157,19 +185,27 @@ while True:
                     )
                 cv2.putText(frame, "YAWNING", (20, 165),
                             cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 3)
-        else:
+        elif mar < MAR_THRESHOLD * 0.7:
             mouth_open_since = None
             yawn_counted = False
     else:
         closed_since = None
         mouth_open_since = None
         yawn_counted = False
+        head_down_since = None
+        nod_counted = False
         cv2.putText(frame, "No face", (20, 40),
                     cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
 
     cv2.imshow("Drowsiness Detector", frame)
-    if cv2.waitKey(1) & 0xFF == ord("q"):
+    key = cv2.waitKey(1) & 0xFF
+    if key == ord("q"):
         break
+    if key == ord("c"):
+        # Recalibrate: measure resting head position again
+        resting_pitch = None
+        calib_start = None
+        calib_samples = []
 
 cap.release()
 cv2.destroyAllWindows()
