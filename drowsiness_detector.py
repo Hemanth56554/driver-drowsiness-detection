@@ -5,12 +5,14 @@ import numpy as np
 import mediapipe as mp
 from mediapipe.tasks import python as mp_python
 from mediapipe.tasks.python import vision
+from alerts import send_telegram
 
 # ---- Settings you can change later ----
 EAR_THRESHOLD = 0.20     # below this = eyes closed
 CLOSED_SECONDS = 2.0     # eyes closed this long = drowsy alarm
 MAR_THRESHOLD = 0.60     # above this = mouth wide open
 YAWN_SECONDS = 1.5       # mouth open this long = one yawn
+ALERT_GAP_SECONDS = 30   # minimum time between two drowsy Telegram messages
 
 # Landmark numbers
 RIGHT_EYE = [33, 160, 158, 133, 153, 144]
@@ -41,10 +43,11 @@ landmarker = vision.FaceLandmarker.create_from_options(options)
 cap = cv2.VideoCapture(0)
 start = time.monotonic()
 
-closed_since = None      # when the eyes first closed
-mouth_open_since = None  # when the mouth first opened wide
-yawn_counted = False     # so one long yawn is counted only once
+closed_since = None       # when the eyes first closed
+mouth_open_since = None   # when the mouth first opened wide
+yawn_counted = False      # so one long yawn is counted only once
 yawn_count = 0
+last_alert_time = -1000.0  # when the last drowsy Telegram message was sent
 
 while True:
     ok, frame = cap.read()
@@ -84,8 +87,10 @@ while True:
         cv2.putText(frame, f"Yawns: {yawn_count}", (20, 95),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 200, 0), 2)
 
-        # ---- Eye logic ----
-        if ear < EAR_THRESHOLD:
+                # ---- Eye logic ----
+        # While the mouth is wide open (a yawn), eyes squint, so ignore EAR
+        mouth_wide = mar > MAR_THRESHOLD
+        if ear < EAR_THRESHOLD and not mouth_wide:
             if closed_since is None:
                 closed_since = now
             closed_for = now - closed_since
@@ -95,14 +100,21 @@ while True:
                 cv2.rectangle(frame, (0, 0), (w, h), (0, 0, 255), 12)
                 cv2.putText(frame, "DROWSY! WAKE UP!", (20, h - 30),
                             cv2.FONT_HERSHEY_SIMPLEX, 1.4, (0, 0, 255), 4)
+                # Telegram message, at most once per ALERT_GAP_SECONDS
+                if now - last_alert_time >= ALERT_GAP_SECONDS:
+                    last_alert_time = now
+                    send_telegram(
+                        "DRIVER DROWSY! Eyes closed for "
+                        f"{closed_for:.1f}s at {time.strftime('%H:%M:%S')}"
+                    )
                 winsound.Beep(1000, 200)
         else:
             closed_since = None
             cv2.putText(frame, "Eyes: Open", (20, 130),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
 
-        # ---- Yawn logic ----
-        if mar > MAR_THRESHOLD:
+                # ---- Yawn logic ----
+        if mouth_wide:
             if mouth_open_since is None:
                 mouth_open_since = now
             open_for = now - mouth_open_since
@@ -110,6 +122,9 @@ while True:
                 if not yawn_counted:
                     yawn_count += 1
                     yawn_counted = True
+                    send_telegram(
+                        f"Yawn #{yawn_count} detected at {time.strftime('%H:%M:%S')}"
+                    )
                 cv2.putText(frame, "YAWNING", (20, 165),
                             cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 3)
         else:
