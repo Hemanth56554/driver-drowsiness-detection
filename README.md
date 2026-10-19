@@ -90,8 +90,10 @@ Each test: 5 deliberate eye closures (about 3 seconds), 3 wide yawns, and 10 sec
 |---|---|---|---|
 | Bright light, no glasses | 5 / 5 | 3 / 3 | 0 |
 | Dim light | to be tested | to be tested | to be tested |
-| With glasses | to be tested | to be tested | to be tested |
+|| Clear glasses | works (counts to be added) | works (counts to be added) | 0 observed |
+| Dark / tinted glasses | not reliable | not reliable | not measured |
 | Head tilted / angled camera | to be tested | to be tested | to be tested |
+
 
 ## Known limitations
 
@@ -101,6 +103,7 @@ Each test: 5 deliberate eye closures (about 3 seconds), 3 wide yawns, and 10 sec
 - Thresholds are tuned to one person. Other faces may need different values.
 - Tested on a laptop webcam only. Performance in a moving vehicle or at night is not yet measured.
 - This is a learning project and is not a safety device.
+- Dark or tinted glasses hide the eyes, so eye-closure detection is unreliable. Head-nod and yawn detection still work. Commercial systems use infrared cameras to solve this.
 
 ## Other files
 
@@ -117,6 +120,7 @@ Each test: 5 deliberate eye closures (about 3 seconds), 3 wide yawns, and 10 sec
 - Auto-calibration per person
 - Dim-light, glasses and angle testing
 - Android version
+
 
 ## Author
 
